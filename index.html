@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cyber Maze 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Bright sky blue background */
+            font-family: 'Orbitron', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 10;
+            pointer-events: none;
+            display: none;
+        }
+        #menu-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 20;
+            display: flex;
+            background-color: #050510;
+        }
+        .neon-box {
+            background: rgba(10, 15, 30, 0.85);
+            border: 2px solid rgba(0, 255, 255, 0.4);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+        }
+        .neon-text-cyan { text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); }
+        .key-cap {
+            background: #1e293b;
+            border: 1px solid #00ffff;
+            box-shadow: 0 4px 0 #0f172a, 0 0 10px rgba(0, 255, 255, 0.3);
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #00ffff;
+        }
+        
+        /* Larger, forgiving crosshair */
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+        }
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(0, 255, 255, 0.9);
+            box-shadow: 0 0 8px #00ffff;
+        }
+        .crosshair::before { top: 18px; left: 0; width: 40px; height: 4px; }
+        .crosshair::after { top: 0; left: 18px; width: 4px; height: 40px; }
+
+        /* Bigger Minimap */
+        #minimap-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 200px;
+            height: 200px;
+            border: 3px solid rgba(0, 255, 255, 0.8);
+            border-radius: 12px;
+            background: rgba(0, 0, 20, 0.8);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            overflow: hidden;
+        }
+
+        #damage-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: radial-gradient(circle, transparent 50%, rgba(255, 0, 0, 0.4) 100%);
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* Simplified Mobile Controls */
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 15;
+            pointer-events: none;
+        }
+        .touch-btn {
+            pointer-events: auto;
+            position: absolute;
+            background: rgba(0, 255, 255, 0.2);
+            border: 2px solid #00ffff;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #00ffff; font-weight: bold; font-size: 2rem;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+            user-select: none;
+        }
+        #btn-left { bottom: 40px; left: 20px; width: 80px; height: 80px; }
+        #btn-right { bottom: 40px; left: 120px; width: 80px; height: 80px; }
+        #btn-forward { bottom: 140px; left: 70px; width: 80px; height: 80px; }
+        
+        #btn-fire {
+            bottom: 40px; right: 40px; width: 100px; height: 100px;
+            background: rgba(239, 68, 68, 0.3);
+            border-color: #ef4444; color: #ef4444;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+    <div id="damage-overlay"></div>
+
+    <!-- Main Menu -->
+    <div id="menu-layer" class="flex items-center justify-center p-6 text-slate-300">
+        <div class="max-w-4xl w-full neon-box rounded-3xl p-8 text-center relative z-10">
+            <h1 class="text-5xl font-black text-cyan-400 neon-text-cyan tracking-wider mb-8">CYBER GEM HUNTER</h1>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10 flex-grow mb-8 text-left">
+                
+                <!-- PC Controls -->
+                <div class="bg-slate-900/80 p-6 rounded-2xl border border-cyan-500/30">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="text-3xl">💻</span>
+                        <h3 class="text-2xl font-bold text-white neon-text-cyan">PC KEYBOARD</h3>
+                    </div>
+                    <ul class="space-y-5 text-base font-bold">
+                        <li class="flex items-center gap-4">
+                            <span class="key-cap px-4 py-2">W</span> <span class="text-slate-500 font-normal">or</span> <span class="key-cap px-4 py-2">↑</span>
+                            <span class="text-white tracking-widest">WALK FORWARD</span>
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <span class="key-cap px-4 py-2">A</span> <span class="key-cap px-4 py-2">D</span> <span class="text-slate-500 font-normal">or</span> <span class="key-cap px-4 py-2">←</span> <span class="key-cap px-4 py-2">→</span>
+                            <span class="text-white tracking-widest">TURN LEFT / RIGHT</span>
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <span class="key-cap px-4 py-2">SPACEBAR</span> 
+                            <span class="text-red-400 tracking-widest">SHOOT LASER</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Mobile Controls -->
+                <div class="bg-slate-900/80 p-6 rounded-2xl border border-fuchsia-500/30">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="text-3xl">📱</span>
+                        <h3 class="text-2xl font-bold text-white neon-text-fuchsia">TABLET / PHONE</h3>
+                    </div>
+                    <ul class="space-y-5 text-base font-bold">
+                        <li class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full border-2 border-cyan-400 flex items-center justify-center text-cyan-400 text-2xl bg-cyan-400/20 shadow-[0_0_10px_rgba(0,255,255,0.4)]">↑</div>
+                            <span class="text-white tracking-widest">TAP TO WALK</span>
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <div class="flex gap-3">
+                                <div class="w-12 h-12 rounded-full border-2 border-cyan-400 flex items-center justify-center text-cyan-400 text-2xl bg-cyan-400/20 shadow-[0_0_10px_rgba(0,255,255,0.4)]">↶</div>
+                                <div class="w-12 h-12 rounded-full border-2 border-cyan-400 flex items-center justify-center text-cyan-400 text-2xl bg-cyan-400/20 shadow-[0_0_10px_rgba(0,255,255,0.4)]">↷</div>
+                            </div>
+                            <span class="text-white tracking-widest">TAP TO TURN</span>
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <div class="w-20 h-12 rounded-full bg-red-500/30 border-2 border-red-500 flex items-center justify-center text-red-400 tracking-widest shadow-[0_0_10px_rgba(255,0,0,0.4)]">FIRE</div>
+                            <span class="text-red-400 tracking-widest">TAP TO SHOOT</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <p class="text-xl text-emerald-400 font-bold mb-8">Follow the path, shoot the diamond drones, and find the Golden Gem!</p>
+
+            <button id="start-btn" class="mx-auto w-full max-w-md bg-cyan-500/30 hover:bg-cyan-500/50 border-4 border-cyan-400 text-cyan-100 font-black text-2xl tracking-[0.2em] py-4 rounded-xl shadow-[0_0_20px_rgba(0,255,255,0.6)] transition-all">
+                START GAME
+            </button>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="ui-layer">
+        <div class="crosshair"></div>
+        
+        <div id="minimap-container">
+            <canvas id="minimap-canvas" width="200" height="200"></canvas>
+        </div>
+
+        <div class="absolute bottom-6 left-6 bg-slate-900/90 border-2 border-cyan-500 p-4 rounded-xl backdrop-blur-md">
+            <div class="text-cyan-400 font-bold text-xl tracking-widest mb-2">SHIELDS</div>
+            <div class="w-64 h-6 bg-slate-800 rounded-full border border-cyan-900">
+                <div id="hp-bar" class="h-full bg-cyan-400 shadow-[0_0_15px_#00ffff]" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Touch Controls -->
+    <div id="mobile-controls">
+        <div id="btn-left" class="touch-btn">↶</div>
+        <div id="btn-right" class="touch-btn">↷</div>
+        <div id="btn-forward" class="touch-btn">↑</div>
+        <div id="btn-fire" class="touch-btn">FIRE</div>
+    </div>
+
+    <!-- Message Screen -->
+    <div id="message-screen" class="hidden absolute top-0 left-0 w-full h-full bg-black/90 z-50 flex-col items-center justify-center">
+        <h1 id="message-title" class="text-6xl font-black mb-4 tracking-widest text-center"></h1>
+        <p id="message-sub" class="text-2xl text-slate-300 mb-12 text-center"></p>
+        <button onclick="location.reload()" class="bg-cyan-600 border-2 border-cyan-300 text-white px-10 py-4 text-2xl rounded-xl font-bold hover:bg-cyan-500 shadow-[0_0_15px_rgba(0,255,255,0.5)]">PLAY AGAIN</button>
+    </div>
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const MAZE_SIZE = 15;
+        const CELL_SIZE = 12; // Slightly larger corridors
+        const WALL_HEIGHT = 10;
+        
+        let gameState = 'MENU'; // MENU, PLAYING, CELEBRATING, END
+        let grid = [];
+        let solutionPath = []; // The single snake track
+        let enemies = [];
+        let projectiles = [];
+        let wallMeshes = [];
+        let pathArrows = [];
+        let confetti = [];
+        let beaconMesh;
+        let beaconPos;
+
+        // --- AUDIO SYSTEM ---
+        let isAudioInitialized = false;
+        let shootSynth, hitSynth, explodeSynth;
+        let bgmSynth, bgmSeq, winSynth;
+
+        async function initAudio() {
+            if (isAudioInitialized) return;
+            await Tone.start();
+            
+            shootSynth = new Tone.Synth({
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.0, release: 0.1 }
+            }).toDestination();
+            shootSynth.volume.value = -10;
+
+            hitSynth = new Tone.NoiseSynth({
+                noise: { type: "white" },
+                envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.01 }
+            }).toDestination();
+            hitSynth.volume.value = -5;
+
+            explodeSynth = new Tone.MembraneSynth({
+                pitchDecay: 0.1, octaves: 4, oscillator: { type: "square" },
+                envelope: { attack: 0.01, decay: 0.4, sustain: 0.01, release: 1.4 }
+            }).toDestination();
+            explodeSynth.volume.value = 0;
+
+            bgmSynth = new Tone.Synth({
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.1, decay: 0.2, sustain: 0.3, release: 0.5 }
+            }).toDestination();
+            bgmSynth.volume.value = -15;
+
+            const melody = ["C4", "E4", "G4", "A4", "G4", "E4", "C4", "D4"];
+            bgmSeq = new Tone.Sequence((time, note) => {
+                bgmSynth.triggerAttackRelease(note, "8n", time);
+            }, melody, "4n");
+
+            winSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" }
+            }).toDestination();
+            winSynth.volume.value = -5;
+
+            Tone.Transport.bpm.value = 120;
+            isAudioInitialized = true;
+        }
+
+        // --- PLAYER STATE ---
+        const player = {
+            velocity: new THREE.Vector3(),
+            speed: 250.0, // Massively increased from 80.0 so the player zips down the halls!
+            friction: 10.0, // Slightly reduced friction for a higher top speed
+            turnSpeed: 0.8, // Drastically reduced for smooth, precise aiming!
+            radius: 2, // Forgiving hitbox
+            hp: 100,
+            currentRotation: 0 // Track Y rotation manually for tank controls
+        };
+
+        const keys = { forward: false, left: false, right: false, fire: false };
+        const touch = { active: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) };
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Friendly bright sky
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('game-container').appendChild(renderer.domElement);
+
+        const raycaster = new THREE.Raycaster();
+        const centerScreen = new THREE.Vector2(0, 0);
+
+        // Lighting - Very bright and clear
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); 
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // Floor - Dark teal to contrast with walls
+        const floorGeo = new THREE.PlaneGeometry(MAZE_SIZE * CELL_SIZE, MAZE_SIZE * CELL_SIZE);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x112233, roughness: 0.9 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set((MAZE_SIZE*CELL_SIZE)/2 - CELL_SIZE/2, 0, (MAZE_SIZE*CELL_SIZE)/2 - CELL_SIZE/2);
+        scene.add(floor);
+
+        // --- SNAKE TRACK GENERATION ---
+        function generateSnakeTrack() {
+            // Fill map with solid walls
+            for (let z = 0; z < MAZE_SIZE; z++) {
+                grid[z] = [];
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    grid[z][x] = 1; 
+                }
+            }
+
+            solutionPath = [];
+            let cx = 1;
+            let cz = 1;
+            let direction = 1; // 1 = right, -1 = left
+
+            // Carve a zig-zag snake pattern
+            while(cz < MAZE_SIZE - 1) {
+                grid[cz][cx] = 0;
+                solutionPath.push({x: cx, z: cz});
+                
+                // Can we keep moving horizontally?
+                if ((direction === 1 && cx < MAZE_SIZE - 2) || (direction === -1 && cx > 1)) {
+                    cx += direction;
+                } else {
+                    // Reached the edge, drop down 2 spaces to leave a wall between corridors
+                    cz++;
+                    if(cz < MAZE_SIZE - 1) {
+                        grid[cz][cx] = 0;
+                        solutionPath.push({x: cx, z: cz});
+                        cz++;
+                        if(cz < MAZE_SIZE - 1) {
+                            grid[cz][cx] = 0;
+                            solutionPath.push({x: cx, z: cz});
+                            direction *= -1; // Switch horizontal direction
+                        }
+                    }
+                }
+            }
+
+            build3DWalls();
+        }
+
+        function build3DWalls() {
+            const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
+            const wallMat = new THREE.MeshStandardMaterial({ 
+                color: 0x00aaff, // Bright, friendly Cyan walls
+                roughness: 0.5,
+                metalness: 0.1
+            });
+
+            for (let z = 0; z < MAZE_SIZE; z++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    if (grid[z][x] === 1) {
+                        const wall = new THREE.Mesh(wallGeo, wallMat);
+                        wall.position.set(x * CELL_SIZE, WALL_HEIGHT/2, z * CELL_SIZE);
+                        scene.add(wall);
+                        wallMeshes.push(wall);
+                    }
+                }
+            }
+        }
+
+        // --- ENTITY SPAWNING ---
+        function createArrowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00ffff';
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 16;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(30, 80); ctx.lineTo(64, 30); ctx.lineTo(98, 80); ctx.stroke();
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function spawnEntities() {
+            // 1. Spawn Player at start of track
+            const startP = solutionPath[0];
+            camera.position.set(startP.x * CELL_SIZE, 3, startP.z * CELL_SIZE);
+            
+            // Look exactly at the 2nd tile in the path
+            const nextP = solutionPath[1];
+            camera.lookAt(nextP.x * CELL_SIZE, 3, nextP.z * CELL_SIZE);
+            player.currentRotation = camera.rotation.y;
+
+            // 2. The Golden Gem (Prize) at the very end
+            beaconPos = solutionPath[solutionPath.length - 1];
+            const prizeGeo = new THREE.IcosahedronGeometry(3.5);
+            const prizeMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffd700, emissive: 0xffaa00, emissiveIntensity: 0.5, metalness: 0.9, roughness: 0.1
+            });
+            beaconMesh = new THREE.Mesh(prizeGeo, prizeMat);
+            beaconMesh.position.set(beaconPos.x * CELL_SIZE, 4, beaconPos.z * CELL_SIZE);
+            scene.add(beaconMesh);
+            
+            const pLight = new THREE.PointLight(0xffd700, 2, 30);
+            beaconMesh.add(pLight);
+
+            // 3. Perfect Path Arrows
+            const arrowTex = createArrowTexture();
+            const arrowGeo = new THREE.PlaneGeometry(CELL_SIZE * 0.5, CELL_SIZE * 0.5);
+            const arrowMat = new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+
+            for(let i = 0; i < solutionPath.length - 1; i++) {
+                const curr = solutionPath[i];
+                const nxt = solutionPath[i+1];
+                const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+                arrow.position.set(curr.x * CELL_SIZE, 0.1, curr.z * CELL_SIZE);
+                arrow.rotation.x = -Math.PI / 2;
+                
+                // Flawless hardcoded logic for arrow direction
+                if (nxt.x > curr.x) arrow.rotation.z = -Math.PI / 2; // Right
+                else if (nxt.x < curr.x) arrow.rotation.z = Math.PI / 2; // Left
+                else if (nxt.z > curr.z) arrow.rotation.z = Math.PI; // Down
+                else if (nxt.z < curr.z) arrow.rotation.z = 0; // Up
+                
+                scene.add(arrow);
+                pathArrows.push(arrow);
+            }
+
+            // 4. Diamond Drones (Spawning directly on the path, away from start)
+            const enemyGeo = new THREE.OctahedronGeometry(2.5); // Big 3D Diamonds
+            const enemyMat = new THREE.MeshStandardMaterial({ 
+                color: 0xff00ff, emissive: 0xaa00aa, wireframe: true, wireframeLinewidth: 3
+            });
+            const innerGeo = new THREE.OctahedronGeometry(1.5);
+            const innerMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+
+            // Place enemies evenly along the track, leaving the first 4 safe
+            for(let i = 6; i < solutionPath.length - 2; i += 4) {
+                const node = solutionPath[i];
+                
+                const enemyGroup = new THREE.Group();
+                const outer = new THREE.Mesh(enemyGeo, enemyMat);
+                const inner = new THREE.Mesh(innerGeo, innerMat);
+                enemyGroup.add(outer);
+                enemyGroup.add(inner);
+                
+                enemyGroup.position.set(node.x * CELL_SIZE, 3, node.z * CELL_SIZE);
+                scene.add(enemyGroup);
+                
+                enemies.push({
+                    mesh: enemyGroup,
+                    innerMesh: inner,
+                    hp: 50, // Takes exactly 2 shots
+                    pathIndex: i, // Which track node they are on
+                    exactPos: new THREE.Vector3(node.x * CELL_SIZE, 3, node.z * CELL_SIZE)
+                });
+            }
+        }
+
+        // --- INPUT HANDLING ---
+        function setupInputs() {
+            // Keyboard (WASD & Arrows)
+            document.addEventListener('keydown', (e) => {
+                const c = e.code;
+                if(c === 'KeyW' || c === 'ArrowUp') keys.forward = true;
+                if(c === 'KeyA' || c === 'ArrowLeft') keys.left = true;
+                if(c === 'KeyD' || c === 'ArrowRight') keys.right = true;
+                if(c === 'Space') fireWeapon();
+            });
+            document.addEventListener('keyup', (e) => {
+                const c = e.code;
+                if(c === 'KeyW' || c === 'ArrowUp') keys.forward = false;
+                if(c === 'KeyA' || c === 'ArrowLeft') keys.left = false;
+                if(c === 'KeyD' || c === 'ArrowRight') keys.right = false;
+            });
+
+            // Mobile Buttons
+            if (touch.active) {
+                document.getElementById('mobile-controls').style.display = 'block';
+                
+                const bindBtn = (id, key) => {
+                    const btn = document.getElementById(id);
+                    btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+                    btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+                };
+                
+                bindBtn('btn-forward', 'forward');
+                bindBtn('btn-left', 'left');
+                bindBtn('btn-right', 'right');
+                
+                document.getElementById('btn-fire').addEventListener('touchstart', (e) => {
+                    e.preventDefault(); fireWeapon();
+                });
+            }
+        }
+
+        // --- COMBAT ---
+        function fireWeapon() {
+            if (gameState !== 'PLAYING') return;
+
+            if (isAudioInitialized) shootSynth.triggerAttackRelease("C4", "16n");
+
+            raycaster.setFromCamera(centerScreen, camera);
+            
+            const enemyGroups = enemies.map(e => e.mesh);
+            const allTargets = [];
+            enemyGroups.forEach(g => g.children.forEach(c => allTargets.push(c))); // Raycast against children
+            wallMeshes.forEach(w => allTargets.push(w));
+            
+            const intersects = raycaster.intersectObjects(allTargets);
+            let hitPoint = raycaster.ray.at(50); 
+
+            if (intersects.length > 0) {
+                hitPoint = intersects[0].point;
+                const hitObj = intersects[0].object;
+                
+                // Find parent group to identify enemy
+                const parentGroup = hitObj.parent;
+                const enemyIdx = enemies.findIndex(e => e.mesh === parentGroup);
+                
+                if (enemyIdx > -1) {
+                    enemies[enemyIdx].hp -= 25; // 2 hits to destroy 50 HP
+                    
+                    const inner = enemies[enemyIdx].innerMesh;
+                    inner.material.color.setHex(0xffffff);
+                    setTimeout(() => { if(inner) inner.material.color.setHex(0xff00ff); }, 100);
+                    
+                    if (enemies[enemyIdx].hp <= 0) {
+                        if(isAudioInitialized) explodeSynth.triggerAttackRelease("C2", "8n");
+                        scene.remove(enemies[enemyIdx].mesh);
+                        enemies.splice(enemyIdx, 1);
+                    } else {
+                        if(isAudioInitialized) hitSynth.triggerAttackRelease("32n");
+                    }
+                }
+            }
+
+            // Laser Beam VFX
+            const barrelOffset = new THREE.Vector3(0.5, -0.5, -1.5).applyQuaternion(camera.quaternion).add(camera.position);
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([barrelOffset, hitPoint]);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 3 });
+            const line = new THREE.Line(lineGeo, lineMat);
+            scene.add(line);
+            
+            projectiles.push({ mesh: line, life: 0.15 });
+        }
+
+        function triggerWin() {
+            if (gameState === 'CELEBRATING' || gameState === 'END') return;
+            gameState = 'CELEBRATING'; 
+            
+            if (isAudioInitialized) {
+                bgmSeq.stop();
+                winSynth.triggerAttackRelease(["C4", "E4", "G4", "C5"], "1m"); 
+            }
+
+            // Burst Confetti
+            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+            const geo = new THREE.PlaneGeometry(0.8, 0.8);
+            for(let i=0; i<200; i++) {
+                const mat = new THREE.MeshBasicMaterial({ color: colors[Math.floor(Math.random()*colors.length)], side: THREE.DoubleSide });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(beaconMesh.position);
+                mesh.userData.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 50,
+                    (Math.random() * 40) + 10,
+                    (Math.random() - 0.5) * 50
+                );
+                mesh.userData.rotSpeed = new THREE.Vector3(Math.random()*10, Math.random()*10, Math.random()*10);
+                scene.add(mesh);
+                confetti.push(mesh);
+            }
+
+            setTimeout(() => {
+                endGame("YOU WON!", "You collected the Golden Gem!", "text-yellow-400");
+            }, 3000);
+        }
+
+        function takeDamage(amount) {
+            player.hp -= amount;
+            document.getElementById('hp-bar').style.width = Math.max(0, player.hp) + '%';
+            
+            const overlay = document.getElementById('damage-overlay');
+            overlay.style.opacity = 1;
+            setTimeout(() => overlay.style.opacity = 0, 200);
+
+            if(player.hp <= 0) {
+                endGame("TRY AGAIN", "Your shields ran out.", "text-red-500");
+            }
+        }
+
+        function endGame(title, sub, colorClass) {
+            gameState = 'END';
+            Tone.Transport.stop();
+            if(bgmSeq) bgmSeq.stop();
+            document.getElementById('ui-layer').style.display = 'none';
+            if(touch.active) document.getElementById('mobile-controls').style.display = 'none';
+            
+            const screen = document.getElementById('message-screen');
+            screen.style.display = 'flex';
+            const titleEl = document.getElementById('message-title');
+            titleEl.innerText = title;
+            titleEl.className = `text-6xl font-black mb-4 tracking-widest text-center ${colorClass}`;
+            document.getElementById('message-sub').innerText = sub;
+        }
+
+        // --- UPDATE LOOP ---
+        const clock = new THREE.Clock();
+
+        function checkCollision(oldPos, newPos) {
+            const buffer = player.radius;
+            let finalPos = newPos.clone();
+            
+            for(let wall of wallMeshes) {
+                const box = new THREE.Box3().setFromObject(wall);
+                box.min.x -= buffer; box.min.z -= buffer;
+                box.max.x += buffer; box.max.z += buffer;
+                
+                if (box.containsPoint(finalPos)) {
+                    const testX = new THREE.Vector3(newPos.x, newPos.y, oldPos.z);
+                    const testZ = new THREE.Vector3(oldPos.x, newPos.y, newPos.z);
+                    if (!box.containsPoint(testX)) { finalPos.z = oldPos.z; }
+                    else if (!box.containsPoint(testZ)) { finalPos.x = oldPos.x; }
+                    else { return oldPos.clone(); }
+                }
+            }
+            return finalPos;
+        }
+
+        function updateMinimap() {
+            const mCanvas = document.getElementById('minimap-canvas');
+            const ctx = mCanvas.getContext('2d');
+            const w = mCanvas.width;
+            const h = mCanvas.height;
+            const cellW = w / MAZE_SIZE;
+            
+            ctx.clearRect(0, 0, w, h);
+            
+            ctx.fillStyle = '#112233'; // Walls
+            for (let z = 0; z < MAZE_SIZE; z++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    if (grid[z][x] === 1) ctx.fillRect(x * cellW, z * cellW, cellW + 1, cellW + 1);
+                }
+            }
+
+            if(beaconPos) {
+                ctx.fillStyle = '#ffd700'; // Gold Gem
+                ctx.beginPath();
+                ctx.arc(beaconPos.x * cellW + cellW/2, beaconPos.z * cellW + cellW/2, 6, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#ff00ff'; // Enemies
+            enemies.forEach(e => {
+                const gridX = e.mesh.position.x / CELL_SIZE;
+                const gridZ = e.mesh.position.z / CELL_SIZE;
+                ctx.beginPath();
+                ctx.arc(gridX * cellW, gridZ * cellW, 5, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            const pGridX = camera.position.x / CELL_SIZE;
+            const pGridZ = camera.position.z / CELL_SIZE;
+            ctx.fillStyle = '#00ffff'; // Player
+            ctx.beginPath();
+            ctx.arc(pGridX * cellW, pGridZ * cellW, 6, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            if (gameState === 'PLAYING') {
+                // Tank Controls Rotation
+                if (keys.left) player.currentRotation += player.turnSpeed * delta;
+                if (keys.right) player.currentRotation -= player.turnSpeed * delta;
+                camera.rotation.y = player.currentRotation;
+
+                // Tank Controls Movement
+                player.velocity.x -= player.velocity.x * player.friction * delta;
+                player.velocity.z -= player.velocity.z * player.friction * delta;
+
+                if (keys.forward) {
+                    player.velocity.z -= player.speed * delta;
+                }
+
+                const oldPos = camera.position.clone();
+                const moveVec = new THREE.Vector3(player.velocity.x * delta, 0, player.velocity.z * delta);
+                moveVec.applyEuler(new THREE.Euler(0, camera.rotation.y, 0, 'YXZ'));
+                
+                const desiredPos = oldPos.clone().add(moveVec);
+                camera.position.copy(checkCollision(oldPos, desiredPos));
+
+                // Slowly move enemies backwards along the track towards the player
+                const time = performance.now() * 0.003;
+                enemies.forEach(e => {
+                    e.mesh.rotation.y += delta * 2;
+                    e.mesh.rotation.z += delta;
+                    e.mesh.position.y = 3 + Math.sin(time + e.pathIndex) * 0.5;
+
+                    // Move slowly to the previous node (creeping towards player start)
+                    if (e.pathIndex > 0) {
+                        const targetNode = solutionPath[e.pathIndex - 1];
+                        const targetPos = new THREE.Vector3(targetNode.x * CELL_SIZE, e.mesh.position.y, targetNode.z * CELL_SIZE);
+                        const moveDir = targetPos.clone().sub(e.mesh.position).normalize();
+                        
+                        // Very slow, creeping speed (2 units per second)
+                        e.mesh.position.addScaledVector(moveDir, delta * 2);
+                        
+                        // Update logical path index if it reaches the node
+                        if (e.mesh.position.distanceTo(targetPos) < 1) {
+                            e.pathIndex--;
+                        }
+                    }
+
+                    // Deal low damage if child bumps directly into them
+                    if(e.mesh.position.distanceTo(camera.position) < 4) {
+                        takeDamage(10 * delta); 
+                    }
+                });
+
+                // Win Condition Check
+                if (camera.position.distanceTo(beaconMesh.position) < CELL_SIZE * 1.5) {
+                    triggerWin();
+                }
+                
+                updateMinimap();
+            }
+
+            // Confetti Animation
+            if (gameState === 'CELEBRATING') {
+                confetti.forEach(c => {
+                    c.position.addScaledVector(c.userData.velocity, delta);
+                    c.userData.velocity.y -= 40 * delta; // Gravity
+                    c.rotation.x += c.userData.rotSpeed.x * delta;
+                    c.rotation.y += c.userData.rotSpeed.y * delta;
+                });
+            }
+
+            // Laser cleanup
+            for(let i = projectiles.length - 1; i >= 0; i--) {
+                projectiles[i].life -= delta;
+                if(projectiles[i].life <= 0) {
+                    scene.remove(projectiles[i].mesh);
+                    projectiles.splice(i, 1);
+                } else {
+                    projectiles[i].mesh.material.opacity = projectiles[i].life * 10;
+                }
+            }
+
+            // Prize Spin
+            if(beaconMesh) {
+                beaconMesh.rotation.y += delta;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- INIT ---
+        window.onload = () => {
+            generateSnakeTrack();
+            spawnEntities();
+            setupInputs();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            document.getElementById('start-btn').addEventListener('click', async () => {
+                await initAudio(); 
+                Tone.Transport.start();
+                bgmSeq.start(0);
+
+                document.getElementById('menu-layer').style.display = 'none';
+                document.getElementById('ui-layer').style.display = 'block';
+                gameState = 'PLAYING';
+            });
+
+            animate();
+        };
+    </script>
+</body>
+</html>
